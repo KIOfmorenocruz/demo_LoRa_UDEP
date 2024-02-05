@@ -102,16 +102,23 @@ static void prepareTxFrame( uint8_t port )
     appData[3] = 0x03;
 }
 
-//if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ 
 
+
+RTC_DATA_ATTR bool firstRun = true;
 
 void setup() {
 
   Serial.begin(115200); 
+  Mcu.begin();
+
+  if(firstRun){
+    
+    firstRun = false;
+  }
+
 
 /* Init LoRaWan -----------------*/
 
-  Mcu.begin();
   deviceState = DEVICE_STATE_INIT;
 
 
@@ -219,6 +226,24 @@ void drawText(char str[30]){
   boardDisplay.clear();
   boardDisplay.display();
 
+}
+
+
+//downlink data handle function example
+void downLinkDataHandle(McpsIndication_t *mcpsIndication)
+{
+  Serial.printf("+REV DATA:%s,RXSIZE %d,PORT %d\r\n",mcpsIndication->RxSlot?"RXWIN2":"RXWIN1",mcpsIndication->BufferSize,mcpsIndication->Port);
+  Serial.print("+REV DATA:");
+  for(uint8_t i=0;i<mcpsIndication->BufferSize;i++)
+  {
+    Serial.printf("%02X",mcpsIndication->Buffer[i]);
+  }
+  Serial.println();
+  uint32_t color=mcpsIndication->Buffer[0]<<16|mcpsIndication->Buffer[1]<<8|mcpsIndication->Buffer[2];
+#if(LoraWan_RGB==1)
+  turnOnRGB(color,5000);
+  turnOffRGB();
+#endif
 }
 
 
