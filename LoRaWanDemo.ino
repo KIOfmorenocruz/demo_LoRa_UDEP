@@ -25,6 +25,16 @@
 #include "esp32/rom/rtc.h"
 
 
+// Sensor BME280
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+Adafruit_BME280 bme; // I2C
+
+
 /* Configuration of display */
 SSD1306Wire  boardDisplay(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr , freq , i2c group , resolution , rst
 
@@ -47,7 +57,7 @@ uint16_t userChannelsMask[6]={ 0x00FF,0x0000,0x0000,0x0000,0x0000,0x0000 };
 LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 
 /*LoraWan: Class, Class A and Class C are supported*/
-DeviceClass_t  loraWanClass = CLASS_A;
+DeviceClass_t  loraWanClass = CLASS_C;
 
 /*LoRaWan: application data transmission duty cycle.  value in [ms].*/
 uint32_t appTxDutyCycle = 15000;
@@ -108,6 +118,9 @@ RTC_DATA_ATTR bool firstRun = true;
 
 void setup() {
 
+// Sensor BME280
+  unsigned status;
+
   Serial.begin(115200); 
   Mcu.begin();
 
@@ -144,7 +157,24 @@ void setup() {
   }
 
 
-}
+/* Init sensor BME280 ----------------- */
+
+    // address = 76h but I2C used, has to be changed
+    
+    // changing by-default I2C pins
+    Wire1.setPins(T4,SCL);
+    status = bme.begin(0x76, &Wire1);  
+
+    delay(100);
+
+    if (!status) {
+        Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
+    }
+
+
+
+
+} // end setup
 
 
 
@@ -248,6 +278,28 @@ void downLinkDataHandle(McpsIndication_t *mcpsIndication)
 
 
 
+void BME280measure() {
+
+  Serial.print("Temperature = ");
+  Serial.print(bme.readTemperature());
+  Serial.println(" °C.");
+
+  Serial.print("Pressure = ");
+  Serial.print(bme.readPressure() / 100.0F);
+  Serial.print(" hPa. Which means an approx. altitude of ");
+  Serial.print(bme.readAltitude(SEALEVELPRESSURE_HPA));
+  Serial.println(" m.");
+
+  Serial.print("Humidity = ");
+  Serial.print(bme.readHumidity());
+  Serial.println(" %.");
+
+  Serial.println();
+}
+
+
+
+
 
 
 // Aux String for printing in display
@@ -283,6 +335,9 @@ void loop()
 
       // Display joining
       drawText("Joining net");
+
+      BME280measure();
+
       LoRaWAN.join();
       break;
     }
@@ -292,6 +347,8 @@ void loop()
     {
       // Display sending
       drawText("Sending Lora msg");
+
+      BME280measure();
 
       prepareTxFrame( appPort );
       LoRaWAN.send();
