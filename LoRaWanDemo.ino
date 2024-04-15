@@ -1,18 +1,24 @@
-/* Heltec Automation LoRaWAN communication example
+/* @brief  Demo example for using an Arduino compatible LoRaWAN board with
+ * some peripherals (BME280 sensor and LCD screen). 
+ * Heltec Lora Wifi v2 board.
  *
- * Function:
- * 1. Upload node data to the server using the standard LoRaWAN protocol.
- *  
  * Description:
- * 1. Communicate using LoRaWAN protocol.
+ * 1. Initializes board and peripherals while displaying it on the screen.
+ * 2. Joins the LoRa gateway.
+ * 3. Runs a measurement and send the values with a LoRa packet.
+ * 4. Goes to sleep with a random waking up time.
+ * 5. Loop.
+ *  
  * 
- * HelTec AutoMation, Chengdu, China
- * 成都惠利特自动化科技有限公司
- * www.heltec.org
+ * @author: F. Moreno Cruz (f.morenocruz@kiotera.de)
+ * @company: Kiotera GmbH
  *
- * this project also realess in GitHub:
+ * Based on: Heltec Automation LoRaWAN communication example.
  * https://github.com/Heltec-Aaron-Lee/WiFi_Kit_series
- * */
+ * www.heltec.org
+ */
+
+
 
 /* For LoRaWan func */
 #include "LoRaWan_APP.h"
@@ -24,21 +30,35 @@
 
 #include "esp32/rom/rtc.h"
 
-
 // Sensor BME280
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
-
+// Parameter for BME280 sensor
 #define SEALEVELPRESSURE_HPA (1028)
 
-Adafruit_BME280 bme; // I2C
+// Option of automatic DevEui by hardware
+#define LORAWAN_DEVEUI_AUTO 0
 
 
-/* Configuration of display */
+/* BME280 sensor I2C configuration */
+Adafruit_BME280 bme; 
+
+/* variables for BME280 sensor */
+float temp; // temperature
+float pres; // pressure
+float humi; // humidity
+
+
+/* Configuration of display (included on board) */
 SSD1306Wire  boardDisplay(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr , freq , i2c group , resolution , rst
+// Aux String for printing in display
+char str[30];
 
 
+/**
+ ---- LoRaWAN CONFIGURATION ----------------
+*/
 
 /* LoRaWan: OTAA para*/
 uint8_t devEui[] = { 0x22, 0x32, 0x33, 0x00, 0x00, 0x88, 0x88, 0x02 };
@@ -96,72 +116,31 @@ uint8_t appPort = 2;
 uint8_t confirmedNbTrials = 4;
 
 
-// variables for BME280 sensor.
-float temp;
-float pres;
-float humi;
-
-
-/*LoRaWan: Prepares the payload of the frame */
-static void prepareTxFrame( uint8_t port )
-{
-  /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
-  *appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
-  *if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
-  *if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
-  *for example, if use REGION_CN470, 
-  *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
-  */
+/**
+ ---- LoRaWAN CONFIGURATION  - END -  ----------------
+*/
 
 
 
-  int pos=int(temp);
-  int dec= int((temp - pos) * 100);
+/* Sleep management  */
+RTC_DATA_ATTR bool firstRun = true;
 
-  Serial.println(temp);
-  Serial.println(pos);
-  Serial.println(dec);
 
-  appData[0] = pos;
-  appData[1] = dec;
 
-  pos=int(pres);
-  dec= int((pres - pos) * 100);
-
-  Serial.println(pres);
-  Serial.println(pos);
-  Serial.println(dec);
-
-  appData[2] = int(pos/100);
-  appData[3] = pos - appData[2]*100;
-  appData[4] = dec;
-
-  pos=int(humi);
-  dec= int((humi-pos) * 100);
-
-  Serial.println(humi);
-  Serial.println(pos);
-  Serial.println(dec);
-
-  appData[5] = pos;
-  appData[6] = dec;
-
-  appDataSize = 7;
-
+/* Screen config */
+void VextON(void){
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, LOW);
 }
 
 
 
 
-
-
-RTC_DATA_ATTR bool firstRun = true;
-
 void setup() {
 // Sensor BME280 status
   unsigned status;
 
-
+/* System Init  ----------------- */ 
   Serial.begin(115200); 
   Mcu.begin();
 
@@ -217,15 +196,9 @@ void setup() {
 
 
 
-void VextON(void)
-{
-  pinMode(Vext,OUTPUT);
-  digitalWrite(Vext, LOW);
-}
 
-
-
-
+/** Draw init bar in included screen
+*/
 void drawInitProgressBar() {
 
   boardDisplay.setFont(ArialMT_Plain_10);
@@ -258,7 +231,8 @@ void drawInitProgressBar() {
 
 }
 
-
+/** Draw Kiotera image in included screen
+*/
 void drawKioteraImage() {
 
   boardDisplay.clear();
@@ -273,7 +247,8 @@ void drawKioteraImage() {
 
 }
 
-
+/** Draw text in included screen
+*/
 void drawText(char str[30]){
 
   int x = 0;
@@ -299,7 +274,8 @@ void drawText(char str[30]){
 
 
 
-
+/** Trigger and print measurement of sensor BME280
+*/
 void BME280measure() {
 
   temp=bme.readTemperature();
@@ -325,8 +301,53 @@ void BME280measure() {
 
 
 
-// Aux String for printing in display
-char str[30];
+/** LoRaWan: Prepare the payload of the frame
+ */
+static void prepareTxFrame( uint8_t port )
+{
+  /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
+  *appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
+  *if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
+  *if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
+  *for example, if use REGION_CN470, 
+  *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
+  */
+
+  int pos=int(temp);
+  int dec= int((temp - pos) * 100);
+
+  appData[0] = pos;
+  appData[1] = dec;
+
+  pos=int(pres);
+  dec= int((pres - pos) * 100);
+
+  appData[2] = int(pos/100);
+  appData[3] = pos - appData[2]*100;
+  appData[4] = dec;
+
+  pos=int(humi);
+  dec= int((humi-pos) * 100);
+
+  appData[5] = pos;
+  appData[6] = dec;
+
+  appDataSize = 7;
+
+}
+
+
+/** Aux for printing uint8_t arrays in Hexadecimal format
+*/
+void printHex(uint8_t num) {
+  char hexCar[2];
+
+  sprintf(hexCar, "%02X", num);
+  Serial.print(hexCar);
+}
+
+
+
 
 
 void loop()
@@ -346,8 +367,12 @@ void loop()
 #if(LORAWAN_DEVEUI_AUTO)
       // Display generating DevEUi by chip ID
       drawText("Generating DevEui");
-      sprintf("Generating DevEui");
+      Serial.print("Generated DevEui:  ");
       LoRaWAN.generateDeveuiByChipID();
+      for(int i=0; i<sizeof(devEui); i++){
+        printHex(devEui[i]);
+      }
+      Serial.println();
 #endif
       LoRaWAN.init(loraWanClass,loraWanRegion);
       break;
