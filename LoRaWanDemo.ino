@@ -30,7 +30,7 @@
 #include <Adafruit_BME280.h>
 
 
-#define SEALEVELPRESSURE_HPA (1013.25)
+#define SEALEVELPRESSURE_HPA (1028)
 
 Adafruit_BME280 bme; // I2C
 
@@ -57,7 +57,7 @@ uint16_t userChannelsMask[6]={ 0x00FF,0x0000,0x0000,0x0000,0x0000,0x0000 };
 LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 
 /*LoraWan: Class, Class A and Class C are supported*/
-DeviceClass_t  loraWanClass = CLASS_C;
+DeviceClass_t  loraWanClass = CLASS_A;
 
 /*LoRaWan: application data transmission duty cycle.  value in [ms].*/
 uint32_t appTxDutyCycle = 15000;
@@ -95,6 +95,13 @@ uint8_t appPort = 2;
 */
 uint8_t confirmedNbTrials = 4;
 
+
+// variables for BME280 sensor.
+float temp;
+float pres;
+float humi;
+
+
 /*LoRaWan: Prepares the payload of the frame */
 static void prepareTxFrame( uint8_t port )
 {
@@ -105,29 +112,63 @@ static void prepareTxFrame( uint8_t port )
   *for example, if use REGION_CN470, 
   *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
   */
-    appDataSize = 4;
-    appData[0] = 0x00;
-    appData[1] = 0x01;
-    appData[2] = 0x02;
-    appData[3] = 0x03;
+
+
+
+  int pos=int(temp);
+  int dec= int((temp - pos) * 100);
+
+  Serial.println(temp);
+  Serial.println(pos);
+  Serial.println(dec);
+
+  appData[0] = pos;
+  appData[1] = dec;
+
+  pos=int(pres);
+  dec= int((pres - pos) * 100);
+
+  Serial.println(pres);
+  Serial.println(pos);
+  Serial.println(dec);
+
+  appData[2] = int(pos/100);
+  appData[3] = pos - appData[2]*100;
+  appData[4] = dec;
+
+  pos=int(humi);
+  dec= int((humi-pos) * 100);
+
+  Serial.println(humi);
+  Serial.println(pos);
+  Serial.println(dec);
+
+  appData[5] = pos;
+  appData[6] = dec;
+
+  appDataSize = 7;
+
 }
+
+
+
 
 
 
 RTC_DATA_ATTR bool firstRun = true;
 
 void setup() {
-
-// Sensor BME280
+// Sensor BME280 status
   unsigned status;
+
 
   Serial.begin(115200); 
   Mcu.begin();
 
   if(firstRun){
-    
     firstRun = false;
   }
+
 
 
 /* Init LoRaWan -----------------*/
@@ -143,8 +184,6 @@ void setup() {
 
   // Initialising the UI will init the display too.
   boardDisplay.init();
-
-
 
   if(rtc_get_reset_reason(0) == DEEPSLEEP_RESET){
     // 
@@ -259,46 +298,30 @@ void drawText(char str[30]){
 }
 
 
-//downlink data handle function example
-void downLinkDataHandle(McpsIndication_t *mcpsIndication)
-{
-  Serial.printf("+REV DATA:%s,RXSIZE %d,PORT %d\r\n",mcpsIndication->RxSlot?"RXWIN2":"RXWIN1",mcpsIndication->BufferSize,mcpsIndication->Port);
-  Serial.print("+REV DATA:");
-  for(uint8_t i=0;i<mcpsIndication->BufferSize;i++)
-  {
-    Serial.printf("%02X",mcpsIndication->Buffer[i]);
-  }
-  Serial.println();
-  uint32_t color=mcpsIndication->Buffer[0]<<16|mcpsIndication->Buffer[1]<<8|mcpsIndication->Buffer[2];
-#if(LoraWan_RGB==1)
-  turnOnRGB(color,5000);
-  turnOffRGB();
-#endif
-}
-
 
 
 void BME280measure() {
 
+  temp=bme.readTemperature();
+  pres=bme.readPressure() / 100.0F;
+  humi=bme.readHumidity();
+
   Serial.print("Temperature = ");
-  Serial.print(bme.readTemperature());
+  Serial.print(temp);
   Serial.println(" °C.");
 
   Serial.print("Pressure = ");
-  Serial.print(bme.readPressure() / 100.0F);
+  Serial.print(pres);
   Serial.print(" hPa. Which means an approx. altitude of ");
   Serial.print(bme.readAltitude(SEALEVELPRESSURE_HPA));
   Serial.println(" m.");
 
   Serial.print("Humidity = ");
-  Serial.print(bme.readHumidity());
+  Serial.print(humi);
   Serial.println(" %.");
 
   Serial.println();
 }
-
-
-
 
 
 
@@ -323,6 +346,7 @@ void loop()
 #if(LORAWAN_DEVEUI_AUTO)
       // Display generating DevEUi by chip ID
       drawText("Generating DevEui");
+      sprintf("Generating DevEui");
       LoRaWAN.generateDeveuiByChipID();
 #endif
       LoRaWAN.init(loraWanClass,loraWanRegion);
@@ -332,12 +356,8 @@ void loop()
 
     case DEVICE_STATE_JOIN:
     {
-
       // Display joining
       drawText("Joining net");
-
-      BME280measure();
-
       LoRaWAN.join();
       break;
     }
@@ -349,7 +369,6 @@ void loop()
       drawText("Sending Lora msg");
 
       BME280measure();
-
       prepareTxFrame( appPort );
       LoRaWAN.send();
       deviceState = DEVICE_STATE_CYCLE;
